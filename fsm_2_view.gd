@@ -3,179 +3,114 @@ class_name FSM2View
 extends Control
 
 var default_font : Font = ThemeDB.fallback_font;
-var _view: Dictionary
+var _transitions_view
+var _nodes_view: Dictionary
 var _steps: = 3
 var _edge_spring_constant = 1.0
 var _centering_spring_constant = 0.7
 var _neighbour_spring_constant = 0.00000
 
-func InnerView() -> Dictionary:
-	return {}
+@export var curve: Curve
 
 
-func InnerView_add_node(
-		view: Dictionary,
-		node_name: String,
-		node_position: Vector2,
-		node_transitions: Array
-	) -> void:
-	view[node_name] = {
-		"position" : node_position,
-		"transitions" : node_transitions
-	}
-
-
-func InnerView_get_node_position(view: Dictionary, node_name: String) -> Vector2:
-	return view[node_name]["position"]
-
-
-func InnerView_get_node_transitions(view: Dictionary, node_name: String) -> Array:
-	return view[node_name]["transitions"]
-
-
-func InnerView_set_node_position(view: Dictionary, node_name: String, node_position: Vector2) -> void:
-	view[node_name]["position"] = node_position
-
-
-func visualize(view: Dictionary) -> void:
-	_view = InnerView()
-	for node: String in view.keys():
-		InnerView_add_node(_view, node, Vector2(0, 0), view[node])
+func visualize(nodes_view: Dictionary, transitions_view: Array) -> void:
+	_nodes_view = nodes_view
+	_transitions_view = transitions_view
 	_adjust()
 	queue_redraw()
 
 
 func _adjust() -> void:
-	for node_name in _view.keys():
+	for node_name in _nodes_view.keys():
 		# Initial placement of nodes
 		var seed = abs(node_name.hash())
 		var coords = Vector2(seed % int(size.x), seed % int(size.y))
-		InnerView_set_node_position(_view, node_name, coords)
+		_nodes_view[node_name] = coords
 
-	for i in range(20):
-		# Run given amount of adjustment cycles
-		_placement_pass(250.0)
-
-
-func _placement_pass(spring_len: float) -> void:
-	var force_accumulator: Dictionary = {}
-	_edges_pass(force_accumulator, spring_len)
-	_centering_pass(force_accumulator)
-	_neighbours_pass(force_accumulator, spring_len)
-
-	var mass = 1.0
-	var dt = 1.0
-	for node_name in force_accumulator.keys():
-		var resultant_force: Vector2 = force_accumulator[node_name]
-		var acceleration: Vector2 = resultant_force / mass
-		var shift: Vector2 = 0.5 * acceleration * dt * dt
-		var current_pos: Vector2 = InnerView_get_node_position(_view, node_name)
-		InnerView_set_node_position(_view, node_name, current_pos + shift)
+	var steps = 20
+	curve.clear_points()
+	curve.bake_resolution = steps
+	curve.max_value = 0.1 * size.x # Highest upper step boundary
+	curve.min_value = 0.001 * size.x # Lowest upper step boundary
+	curve.min_domain = 0
+	curve.max_domain = steps
+	curve.add_point(Vector2(curve.max_domain * 0.25, curve.max_value))
+	curve.add_point(Vector2(curve.max_domain * 0.5, curve.max_value * 0.3))
+	curve.add_point(Vector2(curve.max_domain, 0.0))
+	curve.bake()
+	for i in range(steps):
+		_placement_pass(i)
 
 
-## Apply forces resulting from edges. Edges are treated as springs.
-func _edges_pass(force_accumulator: Dictionary, spring_len: float) -> void:
-	for from_node_name in _view.keys():
-		for transition in InnerView_get_node_transitions(_view, from_node_name):
-			var from_pos: Vector2 = InnerView_get_node_position(_view, from_node_name)
-			var to_node_name = transition["to"]
-			var to_pos: Vector2 = InnerView_get_node_position(_view, to_node_name)
-
-			var root_pos: Vector2 = (from_pos + to_pos) / 2.0
-			var stable_len: float = spring_len / 2.0 # Single side
-			if not force_accumulator.has(from_node_name):
-				force_accumulator[from_node_name] = Vector2.ZERO
-			force_accumulator[from_node_name] += _spring_force(
-				root_pos,
-				stable_len,
-				_edge_spring_constant,
-				from_pos
-			)
-			if not force_accumulator.has(to_node_name):
-				force_accumulator[to_node_name] = Vector2.ZERO
-			force_accumulator[to_node_name] += _spring_force(
-				root_pos,
-				stable_len,
-				_edge_spring_constant,
-				to_pos
-			)
-
-
-## Apply forces as if there were two centering springs attached to each node.
-func _centering_pass(force_accumulator: Dictionary) -> void:
-	# TODO: Make force_accumulator into dict based class "class"
-	for node_name in _view.keys():
-		var node_pos: Vector2 = InnerView_get_node_position(_view, node_name)
-		var h_spring_root_pos: = Vector2(0.0, node_pos.y)
-		var h_spring_len: float = size.x / 2.0
-		if not force_accumulator.has(node_name):
-			force_accumulator[node_name] = Vector2.ZERO
-		force_accumulator[node_name] += _spring_force(
-			h_spring_root_pos,
-			h_spring_len,
-			_centering_spring_constant,
-			node_pos
+func _placement_pass(step: int) -> void:
+	var displacement_accumulator: Dictionary = {}
+	for node_name in _nodes_view.keys():
+		displacement_accumulator[node_name] = Vector2.ZERO
+	var area = size.x * size.y
+	var nodes_count = _nodes_view.size()
+	var c = 1
+	var k = c * sqrt(area/nodes_count)
+	_repulse_pass(displacement_accumulator, k)
+	_attract_pass(displacement_accumulator, k)
+	_temperature_pass(displacement_accumulator, step)
+	for node_name in displacement_accumulator.keys():
+		_nodes_view[node_name] += displacement_accumulator[node_name]
+		_nodes_view[node_name] = Vector2(
+			clamp(_nodes_view[node_name].x, 0.0, size.x),
+			clamp(_nodes_view[node_name].y, 0.0, size.y)
 		)
-		var v_spring_root_pos: = Vector2(node_pos.x, 0.0)
-		var v_spring_len: float = size.y / 2.0
-		force_accumulator[node_name] += _spring_force(
-			v_spring_root_pos,
-			v_spring_len,
-			_centering_spring_constant,
-			node_pos
-		)
+		print(_nodes_view[node_name], size)
 
 
-func _neighbours_pass(force_accumulator: Dictionary, spring_len: float) -> void:
-	var node_names: Array = _view.keys()
-	for i in range(node_names.size()):
-		var node_1_name: String = node_names[i]
-		var node_1_pos: Vector2 = InnerView_get_node_position(_view, node_1_name)
-		if not force_accumulator.has(node_1_name):
-			force_accumulator[node_1_name] = Vector2.ZERO
-		for j in range(i + 1, node_names.size()):
-			var node_2_name: String = node_names[j]
-			var node_2_pos: Vector2 = InnerView_get_node_position(_view, node_2_name)
-			if not force_accumulator.has(node_1_name):
-				force_accumulator[node_1_name] = Vector2.ZERO
-			# TODO: This spring should have default value of average of dimensions
-			# of the Control. But I believe we still should allow for modification
-			force_accumulator[node_1_name] += _spring_force(
-				node_2_pos,
-				1000, # Very long soft spring rootted in other node so it always repels
-				0.03,
-				node_1_pos
-			)
-			force_accumulator[node_2_name] += _spring_force(
-				node_1_pos,
-				1000,
-				0.03,
-				node_2_pos
-			)
+func _repulse_pass(displacement_accumulator: Dictionary, k: float) -> void:
+	for node_1_name in _nodes_view.keys():
+		for node_2_name in _nodes_view.keys():
+			if node_1_name != node_2_name:
+				var node_1_pos: Vector2 = _nodes_view[node_1_name]
+				var node_2_pos: Vector2 = _nodes_view[node_2_name]
+				var direction: Vector2 = -node_1_pos.direction_to(node_2_pos)
+				var distance: float = node_1_pos.distance_to(node_2_pos)
+				var magnitude: float = _repulse_magnitude(k, distance)
+				displacement_accumulator[node_1_name] += direction * magnitude
 
 
-func _spring_force(
-		root_pos: Vector2,
-		base_spring_len: float,
-		spring_constant,
-		pos: Vector2
-	) -> Vector2:
-	var current_spring_len = root_pos.distance_to(pos)
-	var displacement = current_spring_len - base_spring_len
-	return -spring_constant * displacement * root_pos.direction_to(pos)
+func _attract_pass(displacement_accumulator: Dictionary, k: float) -> void:
+	for transition in _transitions_view:
+		var node_1_name: String = transition["from"]
+		var node_1_pos: Vector2 = _nodes_view[node_1_name]
+		var node_2_name: String = transition["to"]
+		var node_2_pos: Vector2 = _nodes_view[node_2_name]
+		var distance: float = node_1_pos.distance_to(node_2_pos)
+		var magnitude = _attract_magnitude(k, distance)
+		displacement_accumulator[node_1_name] += node_1_pos.direction_to(node_2_pos) * magnitude
+		displacement_accumulator[node_2_name] += node_2_pos.direction_to(node_1_pos) * magnitude
+
+
+func _temperature_pass(displacement_accumulator: Dictionary, step: int) -> void:
+	for node_name in displacement_accumulator.keys():
+		var value: Vector2 = displacement_accumulator[node_name]
+		var temperature = curve.sample_baked(step)
+		displacement_accumulator[node_name] = value.limit_length(temperature)
+
+
+func _repulse_magnitude(k: float, d: float) -> float:
+	return pow(k, 2) / d
+
+
+func _attract_magnitude(k: float, d: float) -> float:
+	return pow(d, 2) / k
 
 
 func _draw() -> void:
-	for node in _view.keys():
-		# Draw transitions first so they are beneath nodes
-		for transition in InnerView_get_node_transitions(_view, node):
-			var from_pos: Vector2 = InnerView_get_node_position(_view, node)
-			var to_pos: Vector2 = InnerView_get_node_position(_view, transition["to"])
-			_draw_transition(from_pos, to_pos)
+	# Draw transitions first so they are beneath nodes
+	for transition in _transitions_view:
+		var from_pos: Vector2 = _nodes_view[transition["from"]]
+		var to_pos: Vector2 = _nodes_view[transition["to"]]
+		_draw_transition(from_pos, to_pos)
 
-	for node in _view.keys():
+	for node in _nodes_view.keys():
 		# Now we can draw nodes above transitions
-		_draw_node(node, _view[node]["position"])
+		_draw_node(node, _nodes_view[node])
 
 
 func _draw_node(node_name: String, node_position: Vector2) -> void:
