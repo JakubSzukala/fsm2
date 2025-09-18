@@ -3,14 +3,10 @@ class_name FSM2View
 extends Control
 
 var default_font : Font = ThemeDB.fallback_font;
-var _transitions_view
+var _transitions_view: Array
 var _nodes_view: Dictionary
-var _steps: = 3
-var _edge_spring_constant = 1.0
-var _centering_spring_constant = 0.7
-var _neighbour_spring_constant = 0.00000
 
-@export var curve: Curve
+var curve: Curve
 
 
 func visualize(nodes_view: Dictionary, transitions_view: Array) -> void:
@@ -27,7 +23,8 @@ func _adjust() -> void:
 		var coords = Vector2(seed % int(size.x), seed % int(size.y))
 		_nodes_view[node_name] = coords
 
-	var steps = 20
+	var steps = 100
+	curve = Curve.new()
 	curve.clear_points()
 	curve.bake_resolution = steps
 	curve.max_value = 0.1 * size.x # Highest upper step boundary
@@ -48,10 +45,10 @@ func _placement_pass(step: int) -> void:
 		displacement_accumulator[node_name] = Vector2.ZERO
 	var area = size.x * size.y
 	var nodes_count = _nodes_view.size()
-	var c = 1
-	var k = c * sqrt(area/nodes_count)
+	var k = sqrt(area/nodes_count)
 	_repulse_pass(displacement_accumulator, k)
 	_attract_pass(displacement_accumulator, k)
+	_center_pass(displacement_accumulator, k)
 	_temperature_pass(displacement_accumulator, step)
 	for node_name in displacement_accumulator.keys():
 		_nodes_view[node_name] += displacement_accumulator[node_name]
@@ -59,7 +56,6 @@ func _placement_pass(step: int) -> void:
 			clamp(_nodes_view[node_name].x, 0.0, size.x),
 			clamp(_nodes_view[node_name].y, 0.0, size.y)
 		)
-		print(_nodes_view[node_name], size)
 
 
 func _repulse_pass(displacement_accumulator: Dictionary, k: float) -> void:
@@ -84,6 +80,16 @@ func _attract_pass(displacement_accumulator: Dictionary, k: float) -> void:
 		var magnitude = _attract_magnitude(k, distance)
 		displacement_accumulator[node_1_name] += node_1_pos.direction_to(node_2_pos) * magnitude
 		displacement_accumulator[node_2_name] += node_2_pos.direction_to(node_1_pos) * magnitude
+
+
+func _center_pass(displacement_accumulator: Dictionary, k: float) -> void:
+	for node_name in _nodes_view.keys():
+		var node_pos = _nodes_view[node_name]
+		var center = size / 2.0
+		var direction = node_pos.direction_to(center)
+		var distance = node_pos.distance_to(center)
+		var magnitude = _attract_magnitude(k, distance)
+		displacement_accumulator[node_name] += magnitude * direction
 
 
 func _temperature_pass(displacement_accumulator: Dictionary, step: int) -> void:
