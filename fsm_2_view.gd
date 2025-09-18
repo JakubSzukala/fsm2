@@ -38,11 +38,11 @@ func visualize(view: Dictionary) -> void:
 	_view = InnerView()
 	for node: String in view.keys():
 		InnerView_add_node(_view, node, Vector2(0, 0), view[node])
-	adjust()
+	_adjust()
 	queue_redraw()
 
 
-func adjust() -> void:
+func _adjust() -> void:
 	for node_name in _view.keys():
 		# Initial placement of nodes
 		var seed = abs(node_name.hash())
@@ -51,10 +51,10 @@ func adjust() -> void:
 
 	for i in range(20):
 		# Run given amount of adjustment cycles
-		placement_pass(250.0)
+		_placement_pass(250.0)
 
 
-func placement_pass(spring_len: float) -> void:
+func _placement_pass(spring_len: float) -> void:
 	var force_accumulator: Dictionary = {}
 	_spring_pass(spring_len, force_accumulator)
 
@@ -78,14 +78,33 @@ func _spring_pass(spring_len: float, force_accumulator: Dictionary) -> void:
 
 			var root_pos: Vector2 = (from_pos + to_pos) / 2.0
 			var stable_len: float = spring_len / 2.0 # Single side
-			var actual_len: float = root_pos.distance_to(to_pos)
-			var displacement: float = actual_len - stable_len
 			if not force_accumulator.has(from_node_name):
 				force_accumulator[from_node_name] = Vector2.ZERO
-			force_accumulator[from_node_name] += -spring_constant * displacement * root_pos.direction_to(from_pos)
+			force_accumulator[from_node_name] += _spring_force(
+				root_pos,
+				stable_len,
+				spring_constant,
+				from_pos
+			)
 			if not force_accumulator.has(to_node_name):
 				force_accumulator[to_node_name] = Vector2.ZERO
-			force_accumulator[to_node_name] += -spring_constant * displacement * root_pos.direction_to(to_pos)
+			force_accumulator[to_node_name] += _spring_force(
+				root_pos,
+				stable_len,
+				spring_constant,
+				to_pos
+			)
+
+
+func _spring_force(
+		root_pos: Vector2,
+		base_spring_len: float,
+		spring_constant,
+		pos: Vector2
+	) -> Vector2:
+	var current_spring_len = root_pos.distance_to(pos)
+	var displacement = current_spring_len - base_spring_len
+	return -spring_constant * displacement * root_pos.direction_to(pos)
 
 
 func _draw() -> void:
