@@ -7,7 +7,7 @@ var RADIUS = 50
 var _transitions_view: Array
 var _nodes_view: Dictionary
 
-var curve: Curve
+var _curve: Curve
 
 
 func visualize(nodes_view: Dictionary, transitions_view: Array) -> void:
@@ -25,22 +25,12 @@ func _adjust() -> void:
 		_nodes_view[node_name] = coords
 
 	var steps = 100
-	curve = Curve.new()
-	curve.clear_points()
-	curve.bake_resolution = steps
-	curve.max_value = 0.1 * size.x # Highest upper step boundary
-	curve.min_value = 0.001 * size.x # Lowest upper step boundary
-	curve.min_domain = 0
-	curve.max_domain = steps
-	curve.add_point(Vector2(curve.max_domain * 0.25, curve.max_value))
-	curve.add_point(Vector2(curve.max_domain * 0.5, curve.max_value * 0.3))
-	curve.add_point(Vector2(curve.max_domain, 0.0))
-	curve.bake()
+	_curve = _initialize_temperature_curve(steps, 0.001 * size.x, 0.1 * size.x)
 	for i in range(steps):
-		_placement_pass(i)
+		_optimize(i)
 
 
-func _placement_pass(step: int) -> void:
+func _optimize(step: int) -> void:
 	var displacement_accumulator: Dictionary = {}
 	for node_name in _nodes_view.keys():
 		displacement_accumulator[node_name] = Vector2.ZERO
@@ -57,6 +47,20 @@ func _placement_pass(step: int) -> void:
 			clamp(_nodes_view[node_name].x, 0.0, size.x),
 			clamp(_nodes_view[node_name].y, 0.0, size.y)
 		)
+
+
+func _initialize_temperature_curve(steps: int, min_temp: float, max_temp: float) -> Curve:
+	var curve = Curve.new()
+	curve.bake_resolution = steps
+	curve.max_value = max_temp#0.1 * size.x # Highest upper step boundary
+	curve.min_value = min_temp#0.001 * size.x # Lowest upper step boundary
+	curve.min_domain = 0
+	curve.max_domain = steps
+	curve.add_point(Vector2(curve.max_domain * 0.25, curve.max_value))
+	curve.add_point(Vector2(curve.max_domain * 0.5, curve.max_value * 0.3))
+	curve.add_point(Vector2(curve.max_domain, 0.0))
+	curve.bake()
+	return curve
 
 
 func _repulse_pass(displacement_accumulator: Dictionary, k: float) -> void:
@@ -96,7 +100,8 @@ func _center_pass(displacement_accumulator: Dictionary, k: float) -> void:
 func _temperature_pass(displacement_accumulator: Dictionary, step: int) -> void:
 	for node_name in displacement_accumulator.keys():
 		var value: Vector2 = displacement_accumulator[node_name]
-		var temperature = curve.sample_baked(step)
+		var temperature = _curve.sample_baked(step)
+		print(temperature)
 		displacement_accumulator[node_name] = value.limit_length(temperature)
 
 
