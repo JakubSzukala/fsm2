@@ -1,3 +1,4 @@
+@tool
 class_name FSM2State
 extends Node
 

@@ -14,10 +14,21 @@ func _enter_tree() -> void:
 
 func _edit(object: Object) -> void:
 	var fsm = object as FSM2Base
+	#print(fsm)
 	if not fsm:
 		return
 
-	view_dock.get_node("Button").text = fsm.as_view()["dwight"]
+	var transitions = fsm.get_transitions() as Dictionary
+	var transitions_view = {}
+	for from_and_on: String in transitions.keys():
+		# Convert from inference form into view-friendly form
+		var from: String = from_and_on.split("/")[0]
+		var on: String = from_and_on.split("/")[1]
+		var to: String = transitions[from_and_on]
+		if not transitions_view.has(from):
+			transitions_view[from] = []
+		transitions_view[from].append({"on" : on, "to" : to})
+	view_dock.visualize(transitions_view)
 
 
 func _handles(object: Object) -> bool:
