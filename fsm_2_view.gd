@@ -5,6 +5,8 @@ extends Control
 var default_font : Font = ThemeDB.fallback_font;
 var _view: Dictionary
 var _steps: = 3
+var _edge_spring_constant = 1.0
+var _centering_spring_constant = 0.7
 
 func InnerView() -> Dictionary:
 	return {}
@@ -56,7 +58,8 @@ func _adjust() -> void:
 
 func _placement_pass(spring_len: float) -> void:
 	var force_accumulator: Dictionary = {}
-	_spring_pass(spring_len, force_accumulator)
+	_edges_pass(force_accumulator, spring_len)
+	_centering_pass(force_accumulator)
 
 	var mass = 1.0
 	var dt = 1.0
@@ -68,8 +71,8 @@ func _placement_pass(spring_len: float) -> void:
 		InnerView_set_node_position(_view, node_name, current_pos + shift)
 
 
-func _spring_pass(spring_len: float, force_accumulator: Dictionary) -> void:
-	var spring_constant = 1.0
+## Apply forces resulting from edges. Edges are treated as springs.
+func _edges_pass(force_accumulator: Dictionary, spring_len: float) -> void:
 	for from_node_name in _view.keys():
 		for transition in InnerView_get_node_transitions(_view, from_node_name):
 			var from_pos: Vector2 = InnerView_get_node_position(_view, from_node_name)
@@ -83,7 +86,7 @@ func _spring_pass(spring_len: float, force_accumulator: Dictionary) -> void:
 			force_accumulator[from_node_name] += _spring_force(
 				root_pos,
 				stable_len,
-				spring_constant,
+				_edge_spring_constant,
 				from_pos
 			)
 			if not force_accumulator.has(to_node_name):
@@ -91,9 +94,34 @@ func _spring_pass(spring_len: float, force_accumulator: Dictionary) -> void:
 			force_accumulator[to_node_name] += _spring_force(
 				root_pos,
 				stable_len,
-				spring_constant,
+				_edge_spring_constant,
 				to_pos
 			)
+
+
+## Apply forces as if there were two centering springs attached to each node.
+func _centering_pass(force_accumulator: Dictionary) -> void:
+	# TODO: Make force_accumulator into dict based class "class"
+	for node_name in _view.keys():
+		var node_pos: Vector2 = InnerView_get_node_position(_view, node_name)
+		var h_spring_root_pos: = Vector2(0.0, node_pos.y)
+		var h_spring_len: float = size.x / 2.0
+		if not force_accumulator.has(node_name):
+			force_accumulator[node_name] = Vector2.ZERO
+		force_accumulator[node_name] += _spring_force(
+			h_spring_root_pos,
+			h_spring_len,
+			_centering_spring_constant,
+			node_pos
+		)
+		var v_spring_root_pos: = Vector2(node_pos.x, 0.0)
+		var v_spring_len: float = size.y / 2.0
+		force_accumulator[node_name] += _spring_force(
+			v_spring_root_pos,
+			v_spring_len,
+			_centering_spring_constant,
+			node_pos
+		)
 
 
 func _spring_force(
@@ -122,10 +150,16 @@ func _draw() -> void:
 
 func _draw_node(node_name: String, node_position: Vector2) -> void:
 	var radius = 50
-	draw_circle(node_position, radius, Color.SEA_GREEN, true, -1.0, true)
+	var settings: = EditorInterface.get_editor_settings()
+	var node_edge_color = settings["interface/theme/accent_color"].darkened(0.3)
+	var node_root_color = settings["interface/theme/base_color"]
+	draw_circle(node_position, radius, node_root_color, true, -1.0, true)
+	draw_circle(node_position, radius, node_edge_color, false, 2, true)
 	draw_string(default_font, node_position - Vector2(radius, 0), node_name,
 			HORIZONTAL_ALIGNMENT_CENTER, 2 * radius, 14)
 
 
 func _draw_transition(from_pos: Vector2, to_pos: Vector2) -> void:
-	draw_line(from_pos, to_pos, Color.DARK_GREEN, 5.0, true)
+	var settings: = EditorInterface.get_editor_settings()
+	var transition_color: Color = settings["interface/theme/accent_color"]
+	draw_line(from_pos, to_pos, transition_color, 3.0, true)

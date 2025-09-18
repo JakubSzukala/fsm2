@@ -11,7 +11,6 @@ var _current_state: FSM2State
 func add_state_node(state: FSM2State) -> void:
 	assert(not _nodes.has(state.name), "Can't overwrite existing node")
 	_nodes[state.name] = state
-	print("Nodes:", _nodes)
 
 
 func add_transition_edge(on: String, from: String, to: String) -> void:

@@ -14,7 +14,6 @@ func _enter_tree() -> void:
 
 func _edit(object: Object) -> void:
 	var fsm = object as FSM2Base
-	#print(fsm)
 	if not fsm:
 		return
 
