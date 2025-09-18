@@ -7,6 +7,7 @@ var _view: Dictionary
 var _steps: = 3
 var _edge_spring_constant = 1.0
 var _centering_spring_constant = 0.7
+var _neighbour_spring_constant = 0.00000
 
 func InnerView() -> Dictionary:
 	return {}
@@ -60,6 +61,7 @@ func _placement_pass(spring_len: float) -> void:
 	var force_accumulator: Dictionary = {}
 	_edges_pass(force_accumulator, spring_len)
 	_centering_pass(force_accumulator)
+	_neighbours_pass(force_accumulator, spring_len)
 
 	var mass = 1.0
 	var dt = 1.0
@@ -122,6 +124,34 @@ func _centering_pass(force_accumulator: Dictionary) -> void:
 			_centering_spring_constant,
 			node_pos
 		)
+
+
+func _neighbours_pass(force_accumulator: Dictionary, spring_len: float) -> void:
+	var node_names: Array = _view.keys()
+	for i in range(node_names.size()):
+		var node_1_name: String = node_names[i]
+		var node_1_pos: Vector2 = InnerView_get_node_position(_view, node_1_name)
+		if not force_accumulator.has(node_1_name):
+			force_accumulator[node_1_name] = Vector2.ZERO
+		for j in range(i + 1, node_names.size()):
+			var node_2_name: String = node_names[j]
+			var node_2_pos: Vector2 = InnerView_get_node_position(_view, node_2_name)
+			if not force_accumulator.has(node_1_name):
+				force_accumulator[node_1_name] = Vector2.ZERO
+			# TODO: This spring should have default value of average of dimensions
+			# of the Control. But I believe we still should allow for modification
+			force_accumulator[node_1_name] += _spring_force(
+				node_2_pos,
+				1000, # Very long soft spring rootted in other node so it always repels
+				0.03,
+				node_1_pos
+			)
+			force_accumulator[node_2_name] += _spring_force(
+				node_1_pos,
+				1000,
+				0.03,
+				node_2_pos
+			)
 
 
 func _spring_force(
