@@ -2,7 +2,8 @@
 class_name FSM2View
 extends Control
 
-var default_font : Font = ThemeDB.fallback_font;
+var RADIUS = 50
+
 var _transitions_view: Array
 var _nodes_view: Dictionary
 
@@ -108,29 +109,53 @@ func _attract_magnitude(k: float, d: float) -> float:
 
 
 func _draw() -> void:
-	# Draw transitions first so they are beneath nodes
 	for transition in _transitions_view:
 		var from_pos: Vector2 = _nodes_view[transition["from"]]
 		var to_pos: Vector2 = _nodes_view[transition["to"]]
-		_draw_transition(from_pos, to_pos)
+		from_pos = from_pos.move_toward(to_pos, RADIUS)
+		to_pos = to_pos.move_toward(from_pos, RADIUS)
+		_draw_transition(from_pos, to_pos, transition["on"])
 
 	for node in _nodes_view.keys():
-		# Now we can draw nodes above transitions
 		_draw_node(node, _nodes_view[node])
 
 
 func _draw_node(node_name: String, node_position: Vector2) -> void:
-	var radius = 50
 	var settings: = EditorInterface.get_editor_settings()
 	var node_edge_color = settings["interface/theme/accent_color"].darkened(0.3)
 	var node_root_color = settings["interface/theme/base_color"]
-	draw_circle(node_position, radius, node_root_color, true, -1.0, true)
-	draw_circle(node_position, radius, node_edge_color, false, 2, true)
-	draw_string(default_font, node_position - Vector2(radius, 0), node_name,
-			HORIZONTAL_ALIGNMENT_CENTER, 2 * radius, 14)
+	draw_circle(node_position, RADIUS, node_root_color, true, -1.0, true)
+	draw_circle(node_position, RADIUS, node_edge_color, false, 2, true)
+	draw_string(ThemeDB.fallback_font, node_position - Vector2(RADIUS, 0),
+			node_name, HORIZONTAL_ALIGNMENT_CENTER, -1)
 
 
-func _draw_transition(from_pos: Vector2, to_pos: Vector2) -> void:
+func _draw_transition(from_pos: Vector2, to_pos: Vector2, on: String) -> void:
+	# Get matching colors from editor settings
 	var settings: = EditorInterface.get_editor_settings()
 	var transition_color: Color = settings["interface/theme/accent_color"]
-	draw_line(from_pos, to_pos, transition_color, 3.0, true)
+
+	# Draw an arrow
+	var ARROW_EDGE_LEN = 30
+	var ARROW_WIDTH = 3.0
+	draw_line(from_pos, to_pos, transition_color, ARROW_WIDTH, true)
+	var marker: Vector2 = to_pos.direction_to(from_pos)
+	var arrow_edge_end_1 = marker.rotated(-PI/8) * ARROW_EDGE_LEN + to_pos
+	var arrow_edge_end_2 = marker.rotated(PI/8) * ARROW_EDGE_LEN + to_pos
+	draw_line(to_pos, arrow_edge_end_1, transition_color, ARROW_WIDTH, true)
+	draw_line(to_pos, arrow_edge_end_2, transition_color, ARROW_WIDTH, true)
+
+	# Draw input subscript, to draw rotated text we need to set transform
+	var MAGIC_RHS_OFFSET = 60
+	var TEXT_FROM_ARROW_OFFSET = -10
+	var draw_angle = from_pos.direction_to(to_pos).angle()
+	var from_pos_offset = 10
+	if draw_angle > PI/2.0 or draw_angle < -PI/2.0:
+		# Transform should be corrected by PI if we end up drawing upside down
+		# after flip we also have to change offset so node won't cover subscript
+		draw_angle -= PI
+		from_pos_offset = -on.length() - MAGIC_RHS_OFFSET
+	draw_set_transform(from_pos, draw_angle)
+	draw_string(ThemeDB.fallback_font, Vector2(from_pos_offset,
+			TEXT_FROM_ARROW_OFFSET), on, HORIZONTAL_ALIGNMENT_LEFT)
+	draw_set_transform(Vector2.ZERO, 0)
