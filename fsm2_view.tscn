@@ -1,10 +1,6 @@
-[gd_scene load_steps=3 format=3 uid="uid://gjoipwoi8a6o"]
+[gd_scene load_steps=2 format=3 uid="uid://gjoipwoi8a6o"]
 
 [ext_resource type="Script" uid="uid://dwtensjqiy7rn" path="res://addons/fsm2/fsm_2_view.gd" id="1_3l5ht"]
-
-[sub_resource type="Curve" id="Curve_3l5ht"]
-_data = [Vector2(0.289879, 1), 0.0, 0.0, 0, 0, Vector2(0.579403, 0.0611997), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
-point_count = 3
 
 [node name="Fsm2View" type="Control"]
 custom_minimum_size = Vector2(0, 250)
@@ -15,4 +11,5 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_3l5ht")
-curve = SubResource("Curve_3l5ht")
+
+[connection signal="resized" from="." to="." method="_on_resized"]

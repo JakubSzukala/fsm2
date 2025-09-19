@@ -31,7 +31,7 @@ func _edit(object: Object) -> void:
 		states_view[from] = Vector2.ZERO
 		states_view[to] = Vector2.ZERO
 		transitions_view.append({"from" : from, "on" : on, "to" : to})
-	view_dock.visualize(states_view, transitions_view)
+	view_dock.set_graph(states_view, transitions_view)
 
 
 func _handles(object: Object) -> bool:

@@ -3,52 +3,65 @@ class_name FSM2View
 extends Control
 
 var RADIUS = 50
+var MARGIN = 2 * RADIUS
 
 var _transitions_view: Array
 var _nodes_view: Dictionary
 
-var _curve: Curve
-
-
-func visualize(nodes_view: Dictionary, transitions_view: Array) -> void:
+## Set a graph to be drawn. We expect data in format:
+## nodes_view: {"statename" : Vector2.ZERO, ...}
+## and transitions_view [{"from" : "fromstate", "on" : "inputname", "to" : "tostate"}, ...]
+func set_graph(nodes_view: Dictionary, transitions_view: Array) -> void:
 	_nodes_view = nodes_view
 	_transitions_view = transitions_view
-	_adjust()
+	_refine()
 	queue_redraw()
 
 
-func _adjust() -> void:
+## Runs refinement process, starting from initial nodes placement and improving it
+func _refine() -> void:
+	# Initial placement of nodes
 	for node_name in _nodes_view.keys():
-		# Initial placement of nodes
 		var seed = abs(node_name.hash())
 		var coords = Vector2(seed % int(size.x), seed % int(size.y))
 		_nodes_view[node_name] = coords
 
+	# Run optimization
 	var steps = 100
-	_curve = _initialize_temperature_curve(steps, 0.001 * size.x, 0.1 * size.x)
+	var curve = _initialize_temperature_curve(steps, 0.001 * size.x, 0.1 * size.x)
+	var k = _initialize_k()
 	for i in range(steps):
-		_optimize(i)
+		_optimization_pass(i, k, curve)
 
 
-func _optimize(step: int) -> void:
+## Single adjustment of nodes positions, using given parameters
+func _optimization_pass(step: int, k: float, temperature_curve: Curve) -> void:
+	# Accumulate displacement from each pass
 	var displacement_accumulator: Dictionary = {}
 	for node_name in _nodes_view.keys():
 		displacement_accumulator[node_name] = Vector2.ZERO
-	var area = size.x * size.y
-	var nodes_count = _nodes_view.size()
-	var k = sqrt(area/nodes_count)
+
+	# Run each pass and accumulate displacement
 	_repulse_pass(displacement_accumulator, k)
 	_attract_pass(displacement_accumulator, k)
 	_center_pass(displacement_accumulator, k)
-	_temperature_pass(displacement_accumulator, step)
+	_temperature_pass(displacement_accumulator, step, temperature_curve)
+
+	# Once we are done we can apply displacement, clamping final positions so
+	# these fit into draw window
 	for node_name in displacement_accumulator.keys():
 		_nodes_view[node_name] += displacement_accumulator[node_name]
 		_nodes_view[node_name] = Vector2(
-			clamp(_nodes_view[node_name].x, 0.0, size.x),
-			clamp(_nodes_view[node_name].y, 0.0, size.y)
+			clamp(_nodes_view[node_name].x, MARGIN, size.x - MARGIN),
+			clamp(_nodes_view[node_name].y, MARGIN, size.y - MARGIN)
 		)
 
 
+## Initialize curve used to sample temperature during temperature pass, this is
+## used to limit max displacement, curve has initially high values then rapidly
+## decreases to then stay close to zero at the end. Large changes when we are
+## far from optimum (hopefully jump over local minima to find better ones) and
+## small changes for refined final movement.
 func _initialize_temperature_curve(steps: int, min_temp: float, max_temp: float) -> Curve:
 	var curve = Curve.new()
 	curve.bake_resolution = steps
@@ -63,6 +76,15 @@ func _initialize_temperature_curve(steps: int, min_temp: float, max_temp: float)
 	return curve
 
 
+## Factor dictating attracting and repulsing forces. Based on draw area and nodes
+## count.
+func _initialize_k() -> float:
+	var area = size.x * size.y
+	var nodes_count = _nodes_view.size()
+	return sqrt(area/nodes_count)
+
+
+## Repulse nodes from each other.
 func _repulse_pass(displacement_accumulator: Dictionary, k: float) -> void:
 	for node_1_name in _nodes_view.keys():
 		for node_2_name in _nodes_view.keys():
@@ -75,6 +97,7 @@ func _repulse_pass(displacement_accumulator: Dictionary, k: float) -> void:
 				displacement_accumulator[node_1_name] += direction * magnitude
 
 
+## Attract nodes connected with edges.
 func _attract_pass(displacement_accumulator: Dictionary, k: float) -> void:
 	for transition in _transitions_view:
 		var node_1_name: String = transition["from"]
@@ -87,6 +110,7 @@ func _attract_pass(displacement_accumulator: Dictionary, k: float) -> void:
 		displacement_accumulator[node_2_name] += node_2_pos.direction_to(node_1_pos) * magnitude
 
 
+## Attract all nodes to the center of drawing area.
 func _center_pass(displacement_accumulator: Dictionary, k: float) -> void:
 	for node_name in _nodes_view.keys():
 		var node_pos = _nodes_view[node_name]
@@ -97,23 +121,27 @@ func _center_pass(displacement_accumulator: Dictionary, k: float) -> void:
 		displacement_accumulator[node_name] += magnitude * direction
 
 
-func _temperature_pass(displacement_accumulator: Dictionary, step: int) -> void:
+## Limit final displacements to temperature
+func _temperature_pass(displacement_accumulator: Dictionary, step: int, temperature_curve: Curve) -> void:
 	for node_name in displacement_accumulator.keys():
 		var value: Vector2 = displacement_accumulator[node_name]
-		var temperature = _curve.sample_baked(step)
-		print(temperature)
+		var temperature = temperature_curve.sample_baked(step)
 		displacement_accumulator[node_name] = value.limit_length(temperature)
 
 
+## Calculate repulse magnitude based on 1991 algorithm from Fruchterman and Reingol
 func _repulse_magnitude(k: float, d: float) -> float:
 	return pow(k, 2) / d
 
 
+## Calculate attract magnitude based on 1991 algorithm from Fruchterman and Reingol
 func _attract_magnitude(k: float, d: float) -> float:
 	return pow(d, 2) / k
 
 
+## Draw graph
 func _draw() -> void:
+	# Draw transitions
 	for transition in _transitions_view:
 		var from_pos: Vector2 = _nodes_view[transition["from"]]
 		var to_pos: Vector2 = _nodes_view[transition["to"]]
@@ -121,10 +149,12 @@ func _draw() -> void:
 		to_pos = to_pos.move_toward(from_pos, RADIUS)
 		_draw_transition(from_pos, to_pos, transition["on"])
 
+	# Draw nodes
 	for node in _nodes_view.keys():
 		_draw_node(node, _nodes_view[node])
 
 
+## Draw node at position.
 func _draw_node(node_name: String, node_position: Vector2) -> void:
 	var settings: = EditorInterface.get_editor_settings()
 	var node_edge_color = settings["interface/theme/accent_color"].darkened(0.3)
@@ -135,6 +165,7 @@ func _draw_node(node_name: String, node_position: Vector2) -> void:
 			node_name, HORIZONTAL_ALIGNMENT_CENTER, -1)
 
 
+## Draw transition between two positions with given subscript.
 func _draw_transition(from_pos: Vector2, to_pos: Vector2, on: String) -> void:
 	# Get matching colors from editor settings
 	var settings: = EditorInterface.get_editor_settings()
@@ -164,3 +195,8 @@ func _draw_transition(from_pos: Vector2, to_pos: Vector2, on: String) -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(from_pos_offset,
 			TEXT_FROM_ARROW_OFFSET), on, HORIZONTAL_ALIGNMENT_LEFT)
 	draw_set_transform(Vector2.ZERO, 0)
+
+
+# TODO
+func _on_resized() -> void:
+	pass # Replace with function body.
