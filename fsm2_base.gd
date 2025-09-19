@@ -16,6 +16,7 @@ func add_state_node(state: FSM2State) -> void:
 func add_transition_edge(on: String, from: String, to: String) -> void:
 	assert(_nodes.has(from) and _nodes.has(to), "Can't add edge between nonexistent nodes")
 	var key = from + "/" + on
+	assert(not _transitions.has(key), "Transition must be unique")
 	_transitions[key] = to
 
 
