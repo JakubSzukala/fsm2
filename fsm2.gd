@@ -18,16 +18,20 @@ func _edit(object: Object) -> void:
 		return
 
 	var transitions = fsm.get_transitions() as Dictionary
-	var transitions_view = {}
+	var states_view = {}
+	var transitions_view = []
 	for from_and_on: String in transitions.keys():
 		# Convert from inference form into view-friendly form
+		# We convert from: {"currentstate/input" : "nextstate", ...}
+		# To: {"statename" : Vector2.ZERO, ...}
+		# and [{"from" : "fromstate", "on" : "inputname", "to" : "tostate"}, ...]
 		var from: String = from_and_on.split("/")[0]
 		var on: String = from_and_on.split("/")[1]
 		var to: String = transitions[from_and_on]
-		if not transitions_view.has(from):
-			transitions_view[from] = []
-		transitions_view[from].append({"on" : on, "to" : to})
-	view_dock.visualize(transitions_view)
+		states_view[from] = Vector2.ZERO
+		states_view[to] = Vector2.ZERO
+		transitions_view.append({"from" : from, "on" : on, "to" : to})
+	view_dock.set_graph(states_view, transitions_view)
 
 
 func _handles(object: Object) -> bool:
@@ -36,6 +40,18 @@ func _handles(object: Object) -> bool:
 
 func _make_visible(visible: bool) -> void:
 	view_dock_button.visible = visible
+
+
+func _get_plugin_name() -> String:
+	return "FSM2"
+
+
+func _get_state() -> Dictionary:
+	return view_dock.get_params()
+
+
+func _set_state(state: Dictionary) -> void:
+	view_dock.set_params(state)
 
 
 func _exit_tree() -> void:

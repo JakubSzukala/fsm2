@@ -1,195 +1,258 @@
 @tool
 class_name FSM2View
-extends Control
+extends HBoxContainer
 
-var default_font : Font = ThemeDB.fallback_font;
-var _view: Dictionary
-var _steps: = 3
-var _edge_spring_constant = 1.0
-var _centering_spring_constant = 0.7
-var _neighbour_spring_constant = 0.00000
+## Control node definig draw space for graph
+@onready var graph_space: Control = $GraphSpace
 
-func InnerView() -> Dictionary:
-	return {}
+## Editable coefficients used while optimizing graph
+var radius: float
+var margin: float
+var c_coeff: float
+
+## Graph representation
+var _transitions_view: Array
+var _nodes_view: Dictionary
+
+## Request to redraw
+var _scheduled_draw: bool = false
+
+## Set a graph to be drawn. We expect data in format:
+## nodes_view: {"statename" : Vector2.ZERO, ...}
+## and transitions_view [{"from" : "fromstate", "on" : "inputname", "to" : "tostate"}, ...]
+func set_graph(nodes_view: Dictionary, transitions_view: Array) -> void:
+	_nodes_view = nodes_view
+	_transitions_view = transitions_view
+	_scheduled_draw = true
 
 
-func InnerView_add_node(
-		view: Dictionary,
-		node_name: String,
-		node_position: Vector2,
-		node_transitions: Array
-	) -> void:
-	view[node_name] = {
-		"position" : node_position,
-		"transitions" : node_transitions
+## Set optimization and view parameters, usually used when restoring saved state
+func set_params(params: Dictionary) -> void:
+	radius = params["radius"]
+	c_coeff = params["c_coeff"]
+	$VBoxContainer/HBoxContainer/RadiusEdit.value = radius
+	$VBoxContainer/HBoxContainer2/CCoefficientEdit.value = c_coeff
+
+
+## Get optimization and view parameters, usually used when saving state
+func get_params() -> Dictionary:
+	return {
+		"radius" : $VBoxContainer/HBoxContainer/RadiusEdit.value,
+		"c_coeff" : $VBoxContainer/HBoxContainer2/CCoefficientEdit.value
 	}
 
 
-func InnerView_get_node_position(view: Dictionary, node_name: String) -> Vector2:
-	return view[node_name]["position"]
+## Verify if we are ready to draw
+func _can_draw() -> bool:
+	return _scheduled_draw and graph_space and graph_space.size > Vector2.ZERO and \
+			_nodes_view and _transitions_view
 
 
-func InnerView_get_node_transitions(view: Dictionary, node_name: String) -> Array:
-	return view[node_name]["transitions"]
+## We do most of the work through _process, because here we continously check
+## that 1) there is need to redraw 2) there are proper conditions to draw
+## 3) we have anything to draw. Sometimes 2) or 3) are not fullfilled and this
+## way we can delay the draw until ready
+func _process(_delta: float) -> void:
+	if _can_draw():
+		# Fetch parameters from UI
+		radius = $VBoxContainer/HBoxContainer/RadiusEdit.value
+		c_coeff = $VBoxContainer/HBoxContainer2/CCoefficientEdit.value
+		margin = 2 * radius
+
+		# Redraw graph
+		_refine()
+		queue_redraw()
+		_scheduled_draw = false
 
 
-func InnerView_set_node_position(view: Dictionary, node_name: String, node_position: Vector2) -> void:
-	view[node_name]["position"] = node_position
-
-
-func visualize(view: Dictionary) -> void:
-	_view = InnerView()
-	for node: String in view.keys():
-		InnerView_add_node(_view, node, Vector2(0, 0), view[node])
-	_adjust()
-	queue_redraw()
-
-
-func _adjust() -> void:
-	for node_name in _view.keys():
-		# Initial placement of nodes
+## Runs refinement process, starting from initial nodes placement and improving it
+func _refine() -> void:
+	# Initial placement of nodes
+	for node_name in _nodes_view.keys():
 		var seed = abs(node_name.hash())
-		var coords = Vector2(seed % int(size.x), seed % int(size.y))
-		InnerView_set_node_position(_view, node_name, coords)
-
-	for i in range(20):
-		# Run given amount of adjustment cycles
-		_placement_pass(250.0)
-
-
-func _placement_pass(spring_len: float) -> void:
-	var force_accumulator: Dictionary = {}
-	_edges_pass(force_accumulator, spring_len)
-	_centering_pass(force_accumulator)
-	_neighbours_pass(force_accumulator, spring_len)
-
-	var mass = 1.0
-	var dt = 1.0
-	for node_name in force_accumulator.keys():
-		var resultant_force: Vector2 = force_accumulator[node_name]
-		var acceleration: Vector2 = resultant_force / mass
-		var shift: Vector2 = 0.5 * acceleration * dt * dt
-		var current_pos: Vector2 = InnerView_get_node_position(_view, node_name)
-		InnerView_set_node_position(_view, node_name, current_pos + shift)
-
-
-## Apply forces resulting from edges. Edges are treated as springs.
-func _edges_pass(force_accumulator: Dictionary, spring_len: float) -> void:
-	for from_node_name in _view.keys():
-		for transition in InnerView_get_node_transitions(_view, from_node_name):
-			var from_pos: Vector2 = InnerView_get_node_position(_view, from_node_name)
-			var to_node_name = transition["to"]
-			var to_pos: Vector2 = InnerView_get_node_position(_view, to_node_name)
-
-			var root_pos: Vector2 = (from_pos + to_pos) / 2.0
-			var stable_len: float = spring_len / 2.0 # Single side
-			if not force_accumulator.has(from_node_name):
-				force_accumulator[from_node_name] = Vector2.ZERO
-			force_accumulator[from_node_name] += _spring_force(
-				root_pos,
-				stable_len,
-				_edge_spring_constant,
-				from_pos
-			)
-			if not force_accumulator.has(to_node_name):
-				force_accumulator[to_node_name] = Vector2.ZERO
-			force_accumulator[to_node_name] += _spring_force(
-				root_pos,
-				stable_len,
-				_edge_spring_constant,
-				to_pos
-			)
-
-
-## Apply forces as if there were two centering springs attached to each node.
-func _centering_pass(force_accumulator: Dictionary) -> void:
-	# TODO: Make force_accumulator into dict based class "class"
-	for node_name in _view.keys():
-		var node_pos: Vector2 = InnerView_get_node_position(_view, node_name)
-		var h_spring_root_pos: = Vector2(0.0, node_pos.y)
-		var h_spring_len: float = size.x / 2.0
-		if not force_accumulator.has(node_name):
-			force_accumulator[node_name] = Vector2.ZERO
-		force_accumulator[node_name] += _spring_force(
-			h_spring_root_pos,
-			h_spring_len,
-			_centering_spring_constant,
-			node_pos
+		var coords = Vector2(
+			seed % int(graph_space.size.x),
+			seed % int(graph_space.size.y)
 		)
-		var v_spring_root_pos: = Vector2(node_pos.x, 0.0)
-		var v_spring_len: float = size.y / 2.0
-		force_accumulator[node_name] += _spring_force(
-			v_spring_root_pos,
-			v_spring_len,
-			_centering_spring_constant,
-			node_pos
+		_nodes_view[node_name] = coords
+
+	# Run optimization
+	var steps = 100
+	var curve = _initialize_temperature_curve(
+		steps,
+		0.001 * graph_space.size.x, 0.1 * graph_space.size.x)
+	var k = _initialize_k()
+	for i in range(steps):
+		_optimization_pass(i, k, curve)
+
+
+## Single adjustment of nodes positions, using given parameters
+func _optimization_pass(step: int, k: float, temperature_curve: Curve) -> void:
+	# Accumulate displacement from each pass
+	var displacement_accumulator: Dictionary = {}
+	for node_name in _nodes_view.keys():
+		displacement_accumulator[node_name] = Vector2.ZERO
+
+	# Run each pass and accumulate displacement
+	_repulse_pass(displacement_accumulator, k)
+	_attract_pass(displacement_accumulator, k)
+	_center_pass(displacement_accumulator, k)
+	_temperature_pass(displacement_accumulator, step, temperature_curve)
+
+	# Once we are done we can apply displacement, clamping final positions so
+	# these fit into draw window
+	for node_name in displacement_accumulator.keys():
+		_nodes_view[node_name] += displacement_accumulator[node_name]
+		_nodes_view[node_name] = Vector2(
+			clamp(_nodes_view[node_name].x, margin, graph_space.size.x - margin),
+			clamp(_nodes_view[node_name].y, margin, graph_space.size.y - margin)
 		)
 
 
-func _neighbours_pass(force_accumulator: Dictionary, spring_len: float) -> void:
-	var node_names: Array = _view.keys()
-	for i in range(node_names.size()):
-		var node_1_name: String = node_names[i]
-		var node_1_pos: Vector2 = InnerView_get_node_position(_view, node_1_name)
-		if not force_accumulator.has(node_1_name):
-			force_accumulator[node_1_name] = Vector2.ZERO
-		for j in range(i + 1, node_names.size()):
-			var node_2_name: String = node_names[j]
-			var node_2_pos: Vector2 = InnerView_get_node_position(_view, node_2_name)
-			if not force_accumulator.has(node_1_name):
-				force_accumulator[node_1_name] = Vector2.ZERO
-			# TODO: This spring should have default value of average of dimensions
-			# of the Control. But I believe we still should allow for modification
-			force_accumulator[node_1_name] += _spring_force(
-				node_2_pos,
-				1000, # Very long soft spring rootted in other node so it always repels
-				0.03,
-				node_1_pos
-			)
-			force_accumulator[node_2_name] += _spring_force(
-				node_1_pos,
-				1000,
-				0.03,
-				node_2_pos
-			)
+## Initialize curve used to sample temperature during temperature pass, this is
+## used to limit max displacement, curve has initially high values then rapidly
+## decreases to then stay close to zero at the end. Large changes when we are
+## far from optimum (hopefully jump over local minima to find better ones) and
+## small changes for refined final movement.
+func _initialize_temperature_curve(steps: int, min_temp: float, max_temp: float) -> Curve:
+	var curve = Curve.new()
+	curve.bake_resolution = steps
+	curve.max_value = max_temp
+	curve.min_value = min_temp
+	curve.min_domain = 0
+	curve.max_domain = steps
+	curve.add_point(Vector2(curve.max_domain * 0.25, curve.max_value))
+	curve.add_point(Vector2(curve.max_domain * 0.5, curve.max_value * 0.3))
+	curve.add_point(Vector2(curve.max_domain, 0.0))
+	curve.bake()
+	return curve
 
 
-func _spring_force(
-		root_pos: Vector2,
-		base_spring_len: float,
-		spring_constant,
-		pos: Vector2
-	) -> Vector2:
-	var current_spring_len = root_pos.distance_to(pos)
-	var displacement = current_spring_len - base_spring_len
-	return -spring_constant * displacement * root_pos.direction_to(pos)
+## Factor dictating attracting and repulsing forces. Based on draw area and nodes
+## count.
+func _initialize_k() -> float:
+	var area = graph_space.size.x * graph_space.size.y
+	var nodes_count = _nodes_view.size()
+	return c_coeff * sqrt(area/nodes_count)
 
 
+## Repulse nodes from each other.
+func _repulse_pass(displacement_accumulator: Dictionary, k: float) -> void:
+	for node_1_name in _nodes_view.keys():
+		for node_2_name in _nodes_view.keys():
+			if node_1_name != node_2_name:
+				var node_1_pos: Vector2 = _nodes_view[node_1_name]
+				var node_2_pos: Vector2 = _nodes_view[node_2_name]
+				var direction: Vector2 = -node_1_pos.direction_to(node_2_pos)
+				var distance: float = node_1_pos.distance_to(node_2_pos)
+				var magnitude: float = _repulse_magnitude(k, distance)
+				displacement_accumulator[node_1_name] += direction * magnitude
+
+
+## Attract nodes connected with edges.
+func _attract_pass(displacement_accumulator: Dictionary, k: float) -> void:
+	for transition in _transitions_view:
+		var node_1_name: String = transition["from"]
+		var node_1_pos: Vector2 = _nodes_view[node_1_name]
+		var node_2_name: String = transition["to"]
+		var node_2_pos: Vector2 = _nodes_view[node_2_name]
+		var distance: float = node_1_pos.distance_to(node_2_pos)
+		var magnitude = _attract_magnitude(k, distance)
+		displacement_accumulator[node_1_name] += node_1_pos.direction_to(node_2_pos) * magnitude
+		displacement_accumulator[node_2_name] += node_2_pos.direction_to(node_1_pos) * magnitude
+
+
+## Attract all nodes to the center of drawing area.
+func _center_pass(displacement_accumulator: Dictionary, k: float) -> void:
+	for node_name in _nodes_view.keys():
+		var node_pos = _nodes_view[node_name]
+		var center = graph_space.position + graph_space.size / 2.0
+		var direction = node_pos.direction_to(center)
+		var distance = node_pos.distance_to(center)
+		var magnitude = _attract_magnitude(k, distance)
+		displacement_accumulator[node_name] += magnitude * direction
+
+
+## Limit final displacements to temperature
+func _temperature_pass(displacement_accumulator: Dictionary, step: int, temperature_curve: Curve) -> void:
+	for node_name in displacement_accumulator.keys():
+		var value: Vector2 = displacement_accumulator[node_name]
+		var temperature = temperature_curve.sample_baked(step)
+		displacement_accumulator[node_name] = value.limit_length(temperature)
+
+
+## Calculate repulse magnitude based on 1991 algorithm from Fruchterman and Reingol
+func _repulse_magnitude(k: float, d: float) -> float:
+	return pow(k, 2) / d
+
+
+## Calculate attract magnitude based on 1991 algorithm from Fruchterman and Reingol
+func _attract_magnitude(k: float, d: float) -> float:
+	return pow(d, 2) / k
+
+
+## Draw graph
 func _draw() -> void:
-	for node in _view.keys():
-		# Draw transitions first so they are beneath nodes
-		for transition in InnerView_get_node_transitions(_view, node):
-			var from_pos: Vector2 = InnerView_get_node_position(_view, node)
-			var to_pos: Vector2 = InnerView_get_node_position(_view, transition["to"])
-			_draw_transition(from_pos, to_pos)
+	# Draw transitions
+	for transition in _transitions_view:
+		var from_pos: Vector2 = _nodes_view[transition["from"]]
+		var to_pos: Vector2 = _nodes_view[transition["to"]]
+		from_pos = from_pos.move_toward(to_pos, radius)
+		to_pos = to_pos.move_toward(from_pos, radius)
+		_draw_transition(from_pos, to_pos, transition["on"])
 
-	for node in _view.keys():
-		# Now we can draw nodes above transitions
-		_draw_node(node, _view[node]["position"])
+	# Draw nodes
+	for node in _nodes_view.keys():
+		_draw_node(node, _nodes_view[node])
 
 
+## Draw node at position.
 func _draw_node(node_name: String, node_position: Vector2) -> void:
-	var radius = 50
 	var settings: = EditorInterface.get_editor_settings()
 	var node_edge_color = settings["interface/theme/accent_color"].darkened(0.3)
 	var node_root_color = settings["interface/theme/base_color"]
 	draw_circle(node_position, radius, node_root_color, true, -1.0, true)
 	draw_circle(node_position, radius, node_edge_color, false, 2, true)
-	draw_string(default_font, node_position - Vector2(radius, 0), node_name,
-			HORIZONTAL_ALIGNMENT_CENTER, 2 * radius, 14)
+	draw_string(ThemeDB.fallback_font, node_position - Vector2(radius, 0),
+			node_name, HORIZONTAL_ALIGNMENT_CENTER, -1)
 
 
-func _draw_transition(from_pos: Vector2, to_pos: Vector2) -> void:
+## Draw transition between two positions with given subscript.
+func _draw_transition(from_pos: Vector2, to_pos: Vector2, on: String) -> void:
+	# Get matching colors from editor settings
 	var settings: = EditorInterface.get_editor_settings()
 	var transition_color: Color = settings["interface/theme/accent_color"]
-	draw_line(from_pos, to_pos, transition_color, 3.0, true)
+
+	# Draw an arrow
+	var ARROW_EDGE_LEN = 30
+	var ARROW_WIDTH = 3.0
+	draw_line(from_pos, to_pos, transition_color, ARROW_WIDTH, true)
+	var marker: Vector2 = to_pos.direction_to(from_pos)
+	var arrow_edge_end_1 = marker.rotated(-PI/8) * ARROW_EDGE_LEN + to_pos
+	var arrow_edge_end_2 = marker.rotated(PI/8) * ARROW_EDGE_LEN + to_pos
+	draw_line(to_pos, arrow_edge_end_1, transition_color, ARROW_WIDTH, true)
+	draw_line(to_pos, arrow_edge_end_2, transition_color, ARROW_WIDTH, true)
+
+	# Draw input subscript, to draw rotated text we need to set transform
+	var MAGIC_RHS_OFFSET = 60
+	var TEXT_FROM_ARROW_OFFSET = -10
+	var draw_angle = from_pos.direction_to(to_pos).angle()
+	var from_pos_offset = 10
+	if draw_angle > PI/2.0 or draw_angle < -PI/2.0:
+		# Transform should be corrected by PI if we end up drawing upside down
+		# after flip we also have to change offset so node won't cover subscript
+		draw_angle -= PI
+		from_pos_offset = -on.length() - MAGIC_RHS_OFFSET
+	draw_set_transform(from_pos, draw_angle)
+	draw_string(ThemeDB.fallback_font, Vector2(from_pos_offset,
+			TEXT_FROM_ARROW_OFFSET), on, HORIZONTAL_ALIGNMENT_LEFT)
+	draw_set_transform(Vector2.ZERO, 0)
+
+
+## Every time draw window is resized, we should redraw the graph
+func _on_resized() -> void:
+	_scheduled_draw = true
+
+
+func _on_graph_redraw_button_pressed() -> void:
+	_scheduled_draw = true
