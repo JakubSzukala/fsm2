@@ -2,14 +2,64 @@
 
 [ext_resource type="Script" uid="uid://dwtensjqiy7rn" path="res://addons/fsm2/fsm_2_view.gd" id="1_3l5ht"]
 
-[node name="Fsm2View" type="Control"]
+[node name="Fsm2View" type="HBoxContainer"]
 custom_minimum_size = Vector2(0, 250)
-layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_3l5ht")
+metadata/_custom_type_script = "uid://dwtensjqiy7rn"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="Title" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Graph settings"
+horizontal_alignment = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="RadiusLabel" type="Label" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Radius"
+
+[node name="RadiusEdit" type="SpinBox" parent="VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+value = 50.0
+allow_greater = true
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="CCoefficientLabel" type="Label" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Force scale"
+
+[node name="CCoefficientEdit" type="SpinBox" parent="VBoxContainer/HBoxContainer2"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+step = 0.1
+value = 1.0
+allow_greater = true
+
+[node name="GraphRedrawButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "Graph redraw"
+
+[node name="GraphSpace" type="Control" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [connection signal="resized" from="." to="." method="_on_resized"]
+[connection signal="pressed" from="VBoxContainer/GraphRedrawButton" to="." method="_on_graph_redraw_button_pressed"]

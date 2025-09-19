@@ -1,12 +1,21 @@
 @tool
 class_name FSM2View
-extends Control
+extends HBoxContainer
 
-var RADIUS = 50
-var MARGIN = 2 * RADIUS
+## Control node definig draw space for graph
+@onready var graph_space: Control = $GraphSpace
 
+## Editable coefficients used while optimizing graph
+var radius: float
+var margin: float
+var c_coeff: float
+
+## Graph representation
 var _transitions_view: Array
 var _nodes_view: Dictionary
+
+## Request to redraw
+var _scheduled_draw: bool = false
 
 ## Set a graph to be drawn. We expect data in format:
 ## nodes_view: {"statename" : Vector2.ZERO, ...}
@@ -14,8 +23,23 @@ var _nodes_view: Dictionary
 func set_graph(nodes_view: Dictionary, transitions_view: Array) -> void:
 	_nodes_view = nodes_view
 	_transitions_view = transitions_view
-	_refine()
-	queue_redraw()
+	_scheduled_draw = true
+
+
+## We do most of the work through _process, because here we continously check
+## that 1) there is need to redraw 2) there are proper conditions to draw
+## Sometimes 2) is not fullfilled and this way we can delay the draw until ready
+func _process(_delta: float) -> void:
+	if _scheduled_draw and graph_space and graph_space.size > Vector2.ZERO:
+		# Fetch parameters from UI
+		radius = $VBoxContainer/HBoxContainer/RadiusEdit.value
+		c_coeff = $VBoxContainer/HBoxContainer2/CCoefficientEdit.value
+		margin = 2 * radius
+
+		# Redraw graph
+		_refine()
+		queue_redraw()
+		_scheduled_draw = false
 
 
 ## Runs refinement process, starting from initial nodes placement and improving it
@@ -23,12 +47,17 @@ func _refine() -> void:
 	# Initial placement of nodes
 	for node_name in _nodes_view.keys():
 		var seed = abs(node_name.hash())
-		var coords = Vector2(seed % int(size.x), seed % int(size.y))
+		var coords = Vector2(
+			seed % int(graph_space.size.x),
+			seed % int(graph_space.size.y)
+		)
 		_nodes_view[node_name] = coords
 
 	# Run optimization
 	var steps = 100
-	var curve = _initialize_temperature_curve(steps, 0.001 * size.x, 0.1 * size.x)
+	var curve = _initialize_temperature_curve(
+		steps,
+		0.001 * graph_space.size.x, 0.1 * graph_space.size.x)
 	var k = _initialize_k()
 	for i in range(steps):
 		_optimization_pass(i, k, curve)
@@ -52,8 +81,8 @@ func _optimization_pass(step: int, k: float, temperature_curve: Curve) -> void:
 	for node_name in displacement_accumulator.keys():
 		_nodes_view[node_name] += displacement_accumulator[node_name]
 		_nodes_view[node_name] = Vector2(
-			clamp(_nodes_view[node_name].x, MARGIN, size.x - MARGIN),
-			clamp(_nodes_view[node_name].y, MARGIN, size.y - MARGIN)
+			clamp(_nodes_view[node_name].x, margin, graph_space.size.x - margin),
+			clamp(_nodes_view[node_name].y, margin, graph_space.size.y - margin)
 		)
 
 
@@ -65,8 +94,8 @@ func _optimization_pass(step: int, k: float, temperature_curve: Curve) -> void:
 func _initialize_temperature_curve(steps: int, min_temp: float, max_temp: float) -> Curve:
 	var curve = Curve.new()
 	curve.bake_resolution = steps
-	curve.max_value = max_temp#0.1 * size.x # Highest upper step boundary
-	curve.min_value = min_temp#0.001 * size.x # Lowest upper step boundary
+	curve.max_value = max_temp
+	curve.min_value = min_temp
 	curve.min_domain = 0
 	curve.max_domain = steps
 	curve.add_point(Vector2(curve.max_domain * 0.25, curve.max_value))
@@ -79,9 +108,9 @@ func _initialize_temperature_curve(steps: int, min_temp: float, max_temp: float)
 ## Factor dictating attracting and repulsing forces. Based on draw area and nodes
 ## count.
 func _initialize_k() -> float:
-	var area = size.x * size.y
+	var area = graph_space.size.x * graph_space.size.y
 	var nodes_count = _nodes_view.size()
-	return sqrt(area/nodes_count)
+	return c_coeff * sqrt(area/nodes_count)
 
 
 ## Repulse nodes from each other.
@@ -114,7 +143,7 @@ func _attract_pass(displacement_accumulator: Dictionary, k: float) -> void:
 func _center_pass(displacement_accumulator: Dictionary, k: float) -> void:
 	for node_name in _nodes_view.keys():
 		var node_pos = _nodes_view[node_name]
-		var center = size / 2.0
+		var center = graph_space.position + graph_space.size / 2.0
 		var direction = node_pos.direction_to(center)
 		var distance = node_pos.distance_to(center)
 		var magnitude = _attract_magnitude(k, distance)
@@ -145,8 +174,8 @@ func _draw() -> void:
 	for transition in _transitions_view:
 		var from_pos: Vector2 = _nodes_view[transition["from"]]
 		var to_pos: Vector2 = _nodes_view[transition["to"]]
-		from_pos = from_pos.move_toward(to_pos, RADIUS)
-		to_pos = to_pos.move_toward(from_pos, RADIUS)
+		from_pos = from_pos.move_toward(to_pos, radius)
+		to_pos = to_pos.move_toward(from_pos, radius)
 		_draw_transition(from_pos, to_pos, transition["on"])
 
 	# Draw nodes
@@ -159,9 +188,9 @@ func _draw_node(node_name: String, node_position: Vector2) -> void:
 	var settings: = EditorInterface.get_editor_settings()
 	var node_edge_color = settings["interface/theme/accent_color"].darkened(0.3)
 	var node_root_color = settings["interface/theme/base_color"]
-	draw_circle(node_position, RADIUS, node_root_color, true, -1.0, true)
-	draw_circle(node_position, RADIUS, node_edge_color, false, 2, true)
-	draw_string(ThemeDB.fallback_font, node_position - Vector2(RADIUS, 0),
+	draw_circle(node_position, radius, node_root_color, true, -1.0, true)
+	draw_circle(node_position, radius, node_edge_color, false, 2, true)
+	draw_string(ThemeDB.fallback_font, node_position - Vector2(radius, 0),
 			node_name, HORIZONTAL_ALIGNMENT_CENTER, -1)
 
 
@@ -197,6 +226,10 @@ func _draw_transition(from_pos: Vector2, to_pos: Vector2, on: String) -> void:
 	draw_set_transform(Vector2.ZERO, 0)
 
 
-# TODO
+## Every time draw window is resized, we should redraw the graph
 func _on_resized() -> void:
-	pass # Replace with function body.
+	_scheduled_draw = true
+
+
+func _on_graph_redraw_button_pressed() -> void:
+	_scheduled_draw = true
