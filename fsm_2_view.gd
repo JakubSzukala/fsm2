@@ -26,11 +26,34 @@ func set_graph(nodes_view: Dictionary, transitions_view: Array) -> void:
 	_scheduled_draw = true
 
 
+## Set optimization and view parameters, usually used when restoring saved state
+func set_params(params: Dictionary) -> void:
+	radius = params["radius"]
+	c_coeff = params["c_coeff"]
+	$VBoxContainer/HBoxContainer/RadiusEdit.value = radius
+	$VBoxContainer/HBoxContainer2/CCoefficientEdit.value = c_coeff
+
+
+## Get optimization and view parameters, usually used when saving state
+func get_params() -> Dictionary:
+	return {
+		"radius" : $VBoxContainer/HBoxContainer/RadiusEdit.value,
+		"c_coeff" : $VBoxContainer/HBoxContainer2/CCoefficientEdit.value
+	}
+
+
+## Verify if we are ready to draw
+func _can_draw() -> bool:
+	return _scheduled_draw and graph_space and graph_space.size > Vector2.ZERO and \
+			_nodes_view and _transitions_view
+
+
 ## We do most of the work through _process, because here we continously check
 ## that 1) there is need to redraw 2) there are proper conditions to draw
-## Sometimes 2) is not fullfilled and this way we can delay the draw until ready
+## 3) we have anything to draw. Sometimes 2) or 3) are not fullfilled and this
+## way we can delay the draw until ready
 func _process(_delta: float) -> void:
-	if _scheduled_draw and graph_space and graph_space.size > Vector2.ZERO:
+	if _can_draw():
 		# Fetch parameters from UI
 		radius = $VBoxContainer/HBoxContainer/RadiusEdit.value
 		c_coeff = $VBoxContainer/HBoxContainer2/CCoefficientEdit.value

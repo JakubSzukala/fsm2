@@ -42,6 +42,18 @@ func _make_visible(visible: bool) -> void:
 	view_dock_button.visible = visible
 
 
+func _get_plugin_name() -> String:
+	return "FSM2"
+
+
+func _get_state() -> Dictionary:
+	return view_dock.get_params()
+
+
+func _set_state(state: Dictionary) -> void:
+	view_dock.set_params(state)
+
+
 func _exit_tree() -> void:
 	remove_custom_type("FSM2Base")
 
