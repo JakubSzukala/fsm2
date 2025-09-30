@@ -242,17 +242,18 @@ func _draw_transition(from_pos: Vector2, to_pos: Vector2, on: String) -> void:
 	draw_line(to_pos, arrow_edge_end_2, transition_color, ARROW_WIDTH, true)
 
 	# Draw input subscript, to draw rotated text we need to set transform
-	var MAGIC_RHS_FACTOR = 10.0
+	var MAGIC_RHS_FACTOR = -10.0
 	var TEXT_FROM_ARROW_OFFSET = -10
 	var draw_angle = from_pos.direction_to(to_pos).angle()
-	var from_pos_offset = 40
+	var to_pos_offset = 40
 	if draw_angle > PI/2.0 or draw_angle < -PI/2.0:
 		# Transform should be corrected by PI if we end up drawing upside down
 		# after flip we also have to change offset so node won't cover subscript
 		draw_angle -= PI
-		from_pos_offset = -on.length() * 10
-	draw_set_transform(from_pos, draw_angle)
-	draw_string(ThemeDB.fallback_font, Vector2(from_pos_offset,
+	else:
+		to_pos_offset = -on.length() * 10
+	draw_set_transform(to_pos, draw_angle)
+	draw_string(ThemeDB.fallback_font, Vector2(to_pos_offset,
 			TEXT_FROM_ARROW_OFFSET), on, HORIZONTAL_ALIGNMENT_LEFT)
 	draw_set_transform(Vector2.ZERO, 0)
 
