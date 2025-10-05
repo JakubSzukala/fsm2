@@ -45,6 +45,11 @@ func _on_input(input: String) -> void:
 	input(input)
 
 
+func _ready() -> void:
+	if not Engine.is_editor_hint():
+		_current_state.state_enter()
+
+
 func _process(delta: float) -> void:
 	if not Engine.is_editor_hint():
 		_current_state.state_process(delta)
