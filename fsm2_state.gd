@@ -18,5 +18,9 @@ func state_physics_process(_delta: float) -> void:
 	pass
 
 
+func state_input(_event: InputEvent) -> void:
+	pass
+
+
 func state_exit() -> void:
 	pass

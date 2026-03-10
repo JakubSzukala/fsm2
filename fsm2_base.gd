@@ -60,5 +60,10 @@ func _physics_process(delta: float) -> void:
 		_current_state.state_physics_process(delta)
 
 
+func _input(event: InputEvent) -> void:
+	if not Engine.is_editor_hint():
+		_current_state.state_input(event)
+
+
 func get_transitions() -> Dictionary:
 	return _transitions
